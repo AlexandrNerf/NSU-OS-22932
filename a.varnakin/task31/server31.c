@@ -7,7 +7,7 @@
 #include <sys/select.h>
 
 #define MAX_CLIENTS 10
-#define SOCKET_PATH "/tmp/skt5"
+#define SOCKET_PATH "/tmp/skr"
 
 int main() {
     int server_socket = socket(AF_UNIX, SOCK_STREAM, 0);

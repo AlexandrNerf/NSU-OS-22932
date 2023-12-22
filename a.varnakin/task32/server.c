@@ -35,7 +35,7 @@ void event_handler(int sig, siginfo_t* info, void* context) {
         char* buffer = (char*)request->aio_buf;
 
         if (size == 0) {
-            printf("EOF reached, closing connection\n");
+            printf("Connection closed\n");
             close(request->aio_fildes);
 
             free(buffer);

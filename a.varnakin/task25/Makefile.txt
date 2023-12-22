@@ -1,0 +1,3 @@
+all: task25
+	gcc task25.c -o task25
+

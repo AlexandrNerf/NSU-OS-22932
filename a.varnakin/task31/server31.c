@@ -1,97 +1,102 @@
-#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#define SERVER "./skt2"
+#include <sys/select.h>
 
-// INF LOOP
+#define MAX_CLIENTS 10
+#define SOCKET_PATH "/tmp/skt5"
 
-int main()
-{
-    unlink(SERVER);
-    int sock, listener;
-    struct sockaddr_un addr;
-    char buf[1024];
-    int bytes_read;
-
-    listener = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (listener < 0)
-    {
-        perror("Socket creation error");
-        exit(1);
+int main() {
+    int server_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
     }
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strcpy(addr.sun_path, SERVER);
-    if (bind(listener, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-    {
-        perror("Binding of listener error");
-        exit(2);
+    struct sockaddr_un server_address;
+    server_address.sun_family = AF_UNIX;
+    strcpy(server_address.sun_path, SOCKET_PATH);
+    unlink(SOCKET_PATH);
+
+    if (bind(server_socket, (struct sockaddr*)&server_address, sizeof(server_address)) == -1) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
     }
 
-    if (listen(listener, 7) < 0)
-    {
-        perror("Listening error");
-        exit(3);
+    if (listen(server_socket, 5) == -1) {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
     }
 
-    fd_set read_fds;
-    int max_fd;
+    int client_sockets[MAX_CLIENTS];
+    memset(client_sockets, 0, sizeof(client_sockets));
+
+    printf("Server is waiting\n");
 
     while (1) {
+        fd_set read_fds;
         FD_ZERO(&read_fds);
-        FD_SET(listener, &read_fds);
-        max_fd = listener;
+        FD_SET(server_socket, &read_fds);
 
-        if (select(max_fd + 1, &read_fds, 0, 0, 0) < 0)
-        {
-            perror("Selection error");
-            exit(4);
+        int max_fd = server_socket;
+
+        for (int i = 0; i < MAX_CLIENTS; ++i) {
+            if (client_sockets[i] > 0) {
+                FD_SET(client_sockets[i], &read_fds);
+                max_fd = (client_sockets[i] > max_fd) ? client_sockets[i] : max_fd;
+            }
         }
 
-        if (FD_ISSET(listener, &read_fds))
-        {
-            sock = accept(listener, 0, 0);
-            if (sock < 0)
-            {
-                perror("Acception error");
+        if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) {
+            perror("Select failed");
+            exit(EXIT_FAILURE);
+        }
+
+        if (FD_ISSET(server_socket, &read_fds)) {
+            int client_socket = accept(server_socket, NULL, NULL);
+            if (client_socket == -1) {
+                perror("Accept failed");
                 continue;
             }
 
-            FD_SET(sock, &read_fds);
-            if (sock > max_fd) {
-                max_fd = sock;
+            for (int i = 0; i < MAX_CLIENTS; ++i) {
+                if (client_sockets[i] == 0) {
+                    client_sockets[i] = client_socket;
+                    break;
+                }
             }
+
+            printf("New client connected, socket fd is %d\n", client_socket);
         }
 
-        for (int now = listener + 1; now <= max_fd; ++now)
-        {
-            if (FD_ISSET(now, &read_fds))
-            {
-                while (1)
-                {
-                    bytes_read = recv(now, buf, 1024, 0);
-                    if (bytes_read <= 0)
-                    {
-                        break;
+        for (int i = 0; i < MAX_CLIENTS; ++i) {
+            if (client_sockets[i] > 0 && FD_ISSET(client_sockets[i], &read_fds)) {
+                char buffer[1024];
+                ssize_t bytes_received = recv(client_sockets[i], buffer, sizeof(buffer), 0);
+                if (bytes_received <= 0) {
+                    close(client_sockets[i]);
+                    client_sockets[i] = 0;
+                } else {
+                    for (ssize_t j = 0; j < bytes_received; ++j) {
+                        buffer[j] = toupper(buffer[j]);
                     }
-                    int i = 0;
-                    while (buf[i] != '\0')
-                    {
-                        putchar(toupper(buf[i]));
-                        i++;
+
+                    printf("Received from client %d: %.*s\n", client_sockets[i], (int)bytes_received, buffer);
+
+                    for (int j = 0; j < MAX_CLIENTS; ++j) {
+                        if (client_sockets[j] > 0 && client_sockets[j] != client_sockets[i]) {
+                            send(client_sockets[j], buffer, bytes_received, 0);
+                        }
                     }
                 }
             }
         }
     }
+
+    close(server_socket);
 
     return 0;
 }

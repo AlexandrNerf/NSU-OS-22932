@@ -1,5 +1,5 @@
 all: client server
-client: client32.c
-	gcc -o client client32.c -std=gnu11
+client: client.c
+	gcc -o client client.c -std=gnu11
 server: server.c
-	gcc -o server server32.c -std=gnu11
+	gcc -o server server.c -std=gnu11 -lrt
